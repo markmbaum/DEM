@@ -1,4 +1,4 @@
-function [x,y,r,N] = buildUniformRadiusArray(nrows,ncols,R,packing)
+function [x,y,r] = buildUniformRadiusArray(nrows,ncols,R,packing)
 %buildUniformRadiusArray generates the locations of elements in an array
 %where all the elements are the same size.
 %   [x,y,r,N] = buildUniformRadiusArray(nrows,ncols,R,packing)

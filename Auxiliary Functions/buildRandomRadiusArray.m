@@ -1,4 +1,4 @@
-function[x,y,r,N]=buildRandomRadiusArray(nrows,ncols,randBounds,demo)
+function[x,y,r]=buildRandomRadiusArray(nrows,ncols,randBounds,demo)
 %buildRandomRadiusArray generates the locations and radii of element
 %centers when the radii are randomly generated within bounds.
 %   [x,y,r,N] = buildRandomRadiusArray(nrows,ncols,randBounds,demo)
@@ -13,14 +13,14 @@ function[x,y,r,N]=buildRandomRadiusArray(nrows,ncols,randBounds,demo)
 %Tuning parameters for the interior element generation process
 
 minRadius = min(randBounds); maxRadius = max(randBounds);
-%delete new elements if r(i) < minRadius or r(i) > maxRadius. When the 
+%delete new elements if r(i) < minRadius or r(i) > maxRadius. When the
 %radius bounds are close to each other, like RandBounds=[1,2], this should
 %be lowered a little to prevent the array from being partially filled. If
 %it's equal to min(RandBounds), spaces in the interior usually develop that
 %can't be filled. If minRadius were closer to min(RandBounds)/2 the smaller
 %elements would be allowed in those spaces.
-    
-maxReach = max(randBounds);%compared against distance to closest elements 
+
+maxReach = max(randBounds);%compared against distance to closest elements
 %to determine which elements the new element is anchored to. Should be at
 %least max(RandBounds) or the likelihood of elements failing to adjust
 %increases a lot. New elements might have a radius large enough to
@@ -58,7 +58,7 @@ r(1) = boundedRandom(randBounds);
         pause(demo);
     end
 %DEMO
-for i = 2:nrows 
+for i = 2:nrows
     r(i) = boundedRandom(randBounds);
     x(i) = r(i) - r(1);
     y(i) = y(i-1) - sqrt((r(i-1) + r(i))^2 - (r(i) - r(i-1))^2);
@@ -221,7 +221,7 @@ while(isempty(I) && (D > (.1*mean(r))))
     D = sqrt((x(corner2) - x(i))^2 + (y(corner2) - y(i))^2) - r(corner2) - r(i);
 end
 %rearranging right column to correctly sequence the edge elements
-x(corner3:i) = myFlip(x(corner3:i));%Have to use custom function 'myFlip' 
+x(corner3:i) = myFlip(x(corner3:i));%Have to use custom function 'myFlip'
 y(corner3:i) = myFlip(y(corner3:i));%instead of built-in 'flip' because the
 r(corner3:i) = myFlip(r(corner3:i));%latter is not supported in earlier
 corner3 = i;                        %version of Matlab.
@@ -254,7 +254,7 @@ while(~done)
         plotElements(x(1:i),y(1:i),r(1:i),'on','k-');
         error('Number of edge elements grew unusually large, top row');
     end
-    %complete when new elements are running up against element 1, forcing 
+    %complete when new elements are running up against element 1, forcing
     %them to be small
     temp = distance(x(i),y(i),x(1),y(1)) - r(i) - r(1);
     if((r(i) < minRadius) && (temp < minRadius*.1))
@@ -354,7 +354,7 @@ for j = 0.2:0.2:0.8
         c2w(count,3) = 1 - j - k;
         count = count + 1;
     end
-end     
+end
 
 c1L = length(c1);
 c2L = length(c2);
@@ -382,7 +382,7 @@ while(placed)
                     y(i) = yloc;
                     r(i) = boundedRandom(randBounds);
                     [x(i),y(i),r(i),fail] = autoAdjust(...
-                        i,x(1:i),y(1:i),r(1:i),D,Iclose);                  
+                        i,x(1:i),y(1:i),r(1:i),D,Iclose);
                     if(~fail && (r(i) <= maxRadius) && (r(i) >= minRadius))
                         %successful placement
                         %DEMO
@@ -425,7 +425,7 @@ while(placed)
                         y(i) = yloc;
                         r(i) = boundedRandom(randBounds);
                         [x(i),y(i),r(i),fail] = autoAdjust(...
-                            i,x(1:i),y(1:i),r(1:i),D,Iclose);                  
+                            i,x(1:i),y(1:i),r(1:i),D,Iclose);
                         if(~fail && (r(i)<=maxRadius) && (r(i)>=minRadius))
                             %successful placement
                             %DEMO
@@ -447,7 +447,7 @@ while(placed)
                 end
             end
         end
-    end  
+    end
 end
 
 %complex numbers indicate a failure

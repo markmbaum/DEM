@@ -1,6 +1,6 @@
-function[x,y,r,N]=buildGradientRadiusArray(nrows,ncols,meanRadius,inversion)
-%buildGradientRadiusArray generates the locations and radii of element 
-%centers when the size of the elements is constant for each column but 
+function[x,y,r]=buildGradientRadiusArray(nrows,ncols,meanRadius,inversion)
+%buildGradientRadiusArray generates the locations and radii of element
+%centers when the size of the elements is constant for each column but
 %varies horizontally.
 %   [x,y,r,N]=buildGradientRadiusArray(nrows,ncols,meanRadius,inversion)
 %
@@ -72,7 +72,7 @@ vec=[]; %index vector
 
 if(inversion=='-')
     for i=1:ceil(ncols/2)
-        vec=place+1:place+nrows*2^(i-1);  %assigning whole vectors instead 
+        vec=place+1:place+nrows*2^(i-1);  %assigning whole vectors instead
             x(vec)=z*double(symsum(2^(1-q),q,2,i));   % of using loops
             r(vec)=r1*2^(1-i);
             y(vec)=(vec-min(vec))*2*r(vec(1))+r(vec(1));
@@ -85,8 +85,8 @@ if(inversion=='-')
             y(vec)=y(vec-length(vec));
         place=vec(end);
     end
-    for j=1:fix(ncols/2)-abs(mod(ncols,2)-1) %The abs(mod(ncols,2)-1) term 
-        vec=place+1:place+nrows*2^(i-1-j);    %prevents the even middle 
+    for j=1:fix(ncols/2)-abs(mod(ncols,2)-1) %The abs(mod(ncols,2)-1) term
+        vec=place+1:place+nrows*2^(i-1-j);    %prevents the even middle
             x(vec)=x(place)+r(place)*sqrt(8); %column from being counted
             r(vec)=2*r(place);                %twice
             y(vec)=(vec-min(vec))*2*r(vec(1))+r(vec(1));
@@ -113,7 +113,7 @@ else
             r(vec)=.5*r(place);
             y(vec)=(vec-min(vec))*2*r(vec(1))+r(vec(1));
         place=vec(end);
-    end 
+    end
 end
 
 fprintf('N=%d, avgr=%g\n',N,mean(r));

@@ -20,14 +20,14 @@ if(nargin == 0)   %Without an input variables are defined in the menus below
 %-------------------------------------------------------------------------
 %Number, configuration, and size distribution of the elements
 
-nrows = 2;            %Number of initial rows
-ncols = 2;            %Number of initial columns
+nrows = 25;            %Number of initial rows
+ncols = 15;            %Number of initial columns
                         %For irregular arrangements, the number of rows and
                         %columns are defined along the outer edges. If the
-                        %elements are randomly sized (arrangement==5),
+                        %elements are randomly sized (arrangement == 5),
                         %these inputs define the approximate number of
                         %elements in the outside edges only.
-arrangement = 2;      %Different modes for the distribution of element sizes:
+arrangement = 5;      %Different modes for the distribution of element sizes:
                         %1 - uniform radii, cubic packing
                         %2 - uniform radii, hexagonal (closest) packing
                         %3 - column sizes DEcreasing by factors of 2 into
@@ -39,7 +39,7 @@ meanRadius = 1.5e3;   %Average radius size (doesn't apply for arrangement 5)
 %------------------------------------------
 %For arrangement 5, randomly sized elements
 
-randBounds = 1e3*[1,15];      %Size limits for the generation of random
+randBounds = 1e3*[1,10];      %Size limits for the generation of random
                             %   element radii for arrangement 5
 demo = 0;                     %Toggle for plotting commands placed throughout
                             %   the functions that generate the randomly
@@ -54,7 +54,7 @@ demo = 0;                     %Toggle for plotting commands placed throughout
 
 rho = 2800;           %Rock density
 youngs_mod = 3.4e8;       %Young's modulus
-shear_mod = 1;
+shear_mod = 1;          %Shear modulus
 poissonsq = .25;      %Poisson's ratio squared
 staticFriction = .5;  %Static friction coefficient
 kineticFriction = .4; %Kinetic friction coefficient
@@ -79,11 +79,9 @@ percVertEnd = 1;      %percentage of the total length of the array that, once
 %-------------------------------------------------------------------------
 %Program controls, or non-physical parameters
 
-storeInterval = 1e1;  %Control how often element and block data are stored
-                        %in a non-temporary array that will be saved
-plotInterval = 1e2;   %Number of iterations between each replotting. Use
+plotInterval = 1e4;   %Number of iterations between each replotting. Use
                         %zero to turn in-program plotting off.
-progInterval = 1e2;   %Iterations between progress updates
+progInterval = 1e3;   %Iterations between progress updates
 regroupInterval = 100;%Iterations between nearest neighbor regroupings
 regroupRadii = 1.5;   %Control the size of search groups. It's the factor
                         %multiplied by max(r) to use as the distance
@@ -130,65 +128,67 @@ figure(1); %default plotting destination
 %Initializing the element array
 switch arrangement
     case 1
-        [xi,yi,r,N] = buildUniformRadiusArray(nrows,ncols,meanRadius,'c');
+        [xi, yi, r] = buildUniformRadiusArray(nrows, ncols, meanRadius, 'c');
     case 2
-        [xi,yi,r,N] = buildUniformRadiusArray(nrows,ncols,meanRadius,'h');
+        [xi, yi, r] = buildUniformRadiusArray(nrows, ncols, meanRadius, 'h');
     case 3
-        [xi,yi,r,N] = buildGradientRadiusArray(nrows,ncols,meanRadius,'-');
+        [xi, yi, r] = buildGradientRadiusArray(nrows, ncols, meanRadius, '-');
     case 4
-        [xi,yi,r,N] = buildGradientRadiusArray(nrows,ncols,meanRadius,'+');
+        [xi, yi, r] = buildGradientRadiusArray(nrows, ncols, meanRadius, '+');
     case 5
         %put the try-catch code back in from version 1, but it messes with
         %the error output and is not helpful with debugging
-                [xi,yi,r,N] = buildRandomRadiusArray(...
-                    nrows,ncols,randBounds,demo);
-
+        [xi, yi, r] = buildRandomRadiusArray(nrows, ncols, randBounds, demo);
 end
 
-%Allocate memory for Estore, an array of structures that stores data after
-%an interval of iterations specified by storeinterval. Also declare xf and
-%yf, which are used to advance positions to the next iteration, with theta
-%variables to store element rotation angles.
-temp = zeros(1,N);
-Estruct = struct('x',temp,'y',temp,'theta',temp);
-Estore = repmat(Estruct,1000,1);
-Estore(1).x = xi;
-Estore(1).y = yi;
-Estore(1).theta = temp;
-xf = temp;
-yf = temp;
-thetai = temp;
-thetaf = temp;
+%number of elements
+N = length(xi);
+%number of possible unique contacts between elements
+N_contacts = (N^2 - N)/2;
 
-%Allocating memory for and generating boundary blocks with another array of
-%structures Bstore to record block positions over the trial. Blocks are
-%named wb for west block, eb for east block, etc.
-temp = zeros(2,2);
-nb = temp; eb = temp; sb = temp; wb = temp;
-[~,temp] = max(yi);
-temp = yi(temp) + r(temp);
-nb(:,2) = temp; wb(1,2) = temp; eb(1,2) = temp;
-[~,temp] = min(yi);
-temp = yi(temp) - r(temp);
-sb(:,2) = temp; wb(2,2) = temp; eb(2,2) = temp;
-[~,temp] = min(xi);
-temp = xi(temp) - r(temp);
-wb(:,1) = temp; nb(1,1) = temp; sb(1,1) = temp;
-[~,temp] = max(xi);
-temp = xi(temp) + r(temp);
-eb(:,1) = temp; nb(2,1) = temp; sb(2,1) = temp;
+%Allocate arrays used to advance element positions and rotations
+xf = zeros(1,N);
+yf = zeros(1,N);
+thetai = zeros(1,N);
+thetaf = zeros(1,N);
+
+%Allocating memory for and generate boundary blocks, automatically at the exact
+%edges of the element array. Blocks are named wb for west, eb for east, etc.
+%Each block has four numbers stored in a 2x2 array. The rows of those arrays
+%are x,y pairs stored from top to bottom and from left to right.
+%So for the east block the array stores:
+%  [top x coordinate, top y coordinate;
+%   bottom x coordinate, bottom y coordinate]
+%For the north block the array stores:
+%  [left x coordinate, left y coordinate;
+%   right x coorinate, right y coordinate]
+%and so on...
+%Extra variables like wbTop0 are used to track block progress over the duration
+%of the trial
+%allocate arrays
+nb = zeros(2,2); eb = zeros(2,2); sb = zeros(2,2); wb = zeros(2,2);
+%populate northern y coordinates of blocks
+[~,idx] = max(yi);
+y = yi(idx) + r(idx);
+nb(:,2) = y; wb(1,2) = y; eb(1,2) = y;
+%populate southern y coordinates of blocks
+[~,idx] = min(yi);
+y = yi(idx) - r(idx);
+sb(:,2) = y; wb(2,2) = y; eb(2,2) = y;
+%populate western x coordinates of blocks
+[~,idx] = min(xi);
+x = xi(idx) - r(idx);
+wb(:,1) = x; nb(1,1) = x; sb(1,1) = x;
+%populate eastern x coordinates of blocks
+[~,idx] = max(xi);
+x = xi(idx) + r(idx);
+eb(:,1) = x; nb(2,1) = x; sb(2,1) = x;
+%set tracking variables
 wbTop0 = wb(1,2);
 ebTop0 = eb(1,2);
 width0 = eb(1,1) - wb(1,1);
-temp = zeros(2,2);
-Bstruct = struct('nb',temp,'eb',temp,'sb',temp,'wb',temp);
-Bstore = repmat(Bstruct,1000,1);
-Bstore(1).nb = nb;
-Bstore(1).eb = eb;
-Bstore(1).sb = sb;
-Bstore(1).wb = wb;
 
-%pre-calculate physical quantities
+%pre-calculate physical quantities, masses and moments of inertia
 inv2m = zeros(N,1);
 inv2I = zeros(N,1);
 for i = 1:N
@@ -199,7 +199,7 @@ Chertz = ((pi*youngs_mod)/(1 - poissonsq))/2;
 Cmindlin = (pi*youngs_mod)/(4*(1-poissonsq));
 ravg = mean(r);
 
-%calculate total horizontal and vertical distance the shearing blocks move
+%calculate total horizontal and vertical distance the shearing blocks will move
 distVertEnd = percVertEnd*(nb(1,2) - sb(1,2));
 distHorzOff = percHorzOff*(eb(1,1) - wb(1,1));
 
@@ -207,30 +207,28 @@ distHorzOff = percHorzOff*(eb(1,1) - wb(1,1));
 %velocity is set to .01 times the critical shear block velocity because,
 %even though the blocks will move horizontally first, the critical shear
 %block velocity is still a good reference point.
-temp = abs(hertz(mean(r),mean(r),Chertz,distHorzOff));
-t = 10;%.25*sqrt((1/mean(inv2m))/temp);
-bv = .01;%(staticFriction*temp*distHorzOff)/...
-    %(100*mindlin(mean(r),mean(r),Cmindlin,distHorzOff)*t);
+t = 5;
+bv = .1;
 blockVert = 0;  %0 for blocks moving horizontally, 1 for vertically
 
-%finding groups of neighbors for each element
+%find groups of neighbors for each element and set the regrouping counter
 maxr = max(r);
-G = group(xi,yi,r,maxr,regroupRadii);
+G = group(xi, yi, r, maxr, regroupRadii);
 regroupCount = 0;
 
 %Plotting the initialized array, storing handles for in-loop replotting
-elementHandles = plotElements(xi,yi,r,'off','k-');
-blockHandles = plotBlocks(nb,eb,sb,wb,bv,blockVert);
-title('Initial array','fontsize',18,'interpreter','latex');
-xlabel('x-dimension (m)','fontsize',16,'interpreter','latex');
-ylabel('y-dimension (m)','fontsize',16,'interpreter','latex');
+elementHandles = plotElements(xi, yi, r, 'off', 'k-');
+blockHandles = plotBlocks(nb, eb, sb, wb, bv, blockVert);
+title('Initial array', 'fontsize',18, 'interpreter', 'latex');
+xlabel('x-dimension (m)', 'fontsize',16, 'interpreter', 'latex');
+ylabel('y-dimension (m)', 'fontsize',16, 'interpreter', 'latex');
 drawnow;
 if(plotInterval ~= 0)
     plotInterval = round(plotInterval);
-    fprintf('Plotting every %d iterations.\n',plotInterval);
+    fprintf('Plotting every %d iterations.\n', plotInterval);
 end
 plotCount = 0;
-title('Trial In Progress','fontsize',18,'interpreter','latex');
+title('Trial In Progress', 'fontsize', 18, 'interpreter', 'latex');
 
 %progress updates
 if(progInterval ~= 0)
@@ -242,17 +240,13 @@ if(progInterval ~= 0)
 end
 progCount = 0;
 
-%Allocate space for the previous "intersection points" between elements,
+%Allocate x,y pairs for the previous "intersection points" between elements,
 %which must be stored for calculation of the shear forces and torques.
 %Elements cannot exert forces on themselves and T(i,j) = T(j,i), so the
 %number of (x,y) pairs stored needs to be sum(1:N-1), or N*(N-1)/2. It
 %could be done easily with an NxN array and lots of empty space, but the
 %amount of information stored can be minimized.
-prevInt = zeros((N^2 - N)/2,2);
-
-%storage counters
-storeCount = 0;
-storedIts = 1;
+prevInt = zeros(N_contacts, 2);
 
 %initializing loop variables
 distVert = 0;
@@ -263,51 +257,52 @@ startClock = clock;
 clock1 = startClock;
 
 %MAIN PROGRAM LOOP
+%advance until the blocks have moved vertically to the desired limit
 while(distVert < distVertEnd)
 
     %move blocks
-    temp = t*bv;
+    d = t*bv;
     if(blockVert)
-        temp = t*bv;
-        nb(1,2) = nb(1,2) + temp;
-        nb(2,2) = nb(2,2) - temp;
-        eb(:,2) = eb(:,2) - temp;
-        sb(1,2) = sb(1,2) + temp;
-        sb(2,2) = sb(2,2) - temp;
-        wb(:,2) = wb(:,2) + temp;
+        nb(1,2) = nb(1,2) + d; %north block, left y coordinate
+        nb(2,2) = nb(2,2) - d; %north block, right y coordinate
+        eb(:,2) = eb(:,2) - d; %east block, both y coordinates
+        sb(1,2) = sb(1,2) + d; %south block, left y coordinate
+        sb(2,2) = sb(2,2) - d; %south block, right y coordinate
+        wb(:,2) = wb(:,2) + d; %west block, both y coordinates
     else
-        nb(1,1) = nb(1,1) + temp;
-        nb(2,1) = nb(2,1) - temp;
-        eb(:,1) = eb(:,1) - temp;
-        sb(1,1) = sb(1,1) + temp;
-        sb(2,1) = sb(2,1) - temp;
-        wb(:,1) = wb(:,1) + temp;
+        nb(1,1) = nb(1,1) + d; %north block, left x coordinate
+        nb(2,1) = nb(2,1) - d; %north block, right x coordinate
+        eb(:,1) = eb(:,1) - d; %east block, both x coordinates
+        sb(1,1) = sb(1,1) + d; %south block, left x coordinate
+        sb(2,1) = sb(2,1) - d; %south block, right x coordinate
+        wb(:,1) = wb(:,1) + d; %west block, both x coordinates
+        %when the blocks move in enough, switch to vertical motion by toggling
+        %blockVert
         if((width0 - (eb(1,1) - wb(1,1))) >= distHorzOff)
             blockVert = 1;
-            itVertOn = i + 1;
         end
     end
     %record angle and slope of the north and south blocks for subsequent
-    %force calculations
+    %force and torque calculations
     bSlope = (nb(2,2) - nb(1,2))/(nb(2,1) - nb(1,1));
     bAngle = atan(bSlope);
 
-    %move elements
+    %iterate over each element
     for j = 1:N
 
         %find overlapping elements, 'I' contains contacting element indices,
         %and U contains the respective overlap magnitudes.
-        [I,U] = findNormalOverlaps(1,xi(G{j}),yi(G{j}),r(G{j}),0);
+        [I,U] = findNormalOverlaps(1, xi(G{j}), yi(G{j}), r(G{j}), 0);
         I=G{j}(I);
 
+        %use running sums for the force components due to several contacts
         fx = 0;
         fy = 0;
 
-        %forces between elements
+        %forces between contacting elements
         for k = 1:length(I)
             %NORMAL FORCE
-            kn = hertz(r(j),r(I(k)),Chertz,U(k));
-            fn = kn*U(k);
+            fn = youngs_mod*U(k);
             %alpha is the angle between element centers
             alpha = abs(atan((yi(I(k)) - yi(j))/(xi(I(k)) - xi(j))));
             %x component
@@ -323,45 +318,53 @@ while(distVert < distVertEnd)
                 fy = fy + fn*sin(alpha);
             end
 
-%             %SHEAR FORCE
-%             [xint,yint] = elementIntersectionPoint(xi(j),yi(j),r(j),...
-%                 xi(I(k)),yi(I(k)),r(I(k)));
-%             %find the index of the 1D storage array for the pair of
-%             %elements under consideration, elements 'j' and 'I(k)'.
-%             idx = map2(j,I(k));
-%             %Interserction points initialize at zero, but without a real
-%             %previous value, the shear force can't be computed.
-%             if((prevInt(idx,1) ~= 0) && (prevInt(idx,2) ~= 0))
-%                 
-%                 %shear overlap
-%                 s = 0;
-%                 
-%                 %first the component of S from intersection point migration
-%                 a = xint - prevInt(idx,1);
-%                 b = yint - prevInt(idx,2);
-%                 
-%                 %alpha is now angle of the intersection point's migration
-%                 if(a == 0)
-%                     alpha = pi/2;
-%                 else
-%                     alpha = abs(atan(b/a));
-%                 end
-%                 
-%                 %phi is the angle from element center to intersection point
-%                 phi = atan2(yint - yi(j),xint - xi(j));
-%                 
-%                 %gamma is the angle from element center to the previous 
-%                 %intersection point
-%                 gamma = atan2(prevInt(idx,2) - yi(j),prevInt(idx,1) - xi(j));
-%                 
-%                 %figure out which direction the intersecting element is 
-%                 %moving around element j, clockwise (positive) or
-%                 %counterclockwise (negative), and assign it to the
-%                 %calculation for shear overlap 's'.
-%                 temp = sqrt(a^2 + b^2)*abs(sin(alpha + phi));
-%                 if(phi > (pi/2) && gamma < (-pi/2))
-%                     s = s + 
-%             end
+            %SHEAR FORCE
+            [xint,yint] = elementIntersectionPoint(xi(j), yi(j), r(j),...
+                xi(I(k)), yi(I(k)), r(I(k)));
+            %find the index of the 1D storage array for the pair of
+            %elements under consideration, elements 'j' and 'I(k)'.
+            idx = map2(j,I(k));
+            %Interserction points initialize at zero, but without a real
+            %previous value, the shear force can't be computed. At the first
+            %iteration the blocks contact, no shear force is computed. In
+            %subsequent iterations there will be previous intersection points
+            %and the shear force is computed.
+            if((prevInt(idx,1) ~= 0) && (prevInt(idx,2) ~= 0))
+
+                %shear overlap
+                s = 0;
+
+                %first the component of S from intersection point migration
+                a = xint - prevInt(idx,1);
+                b = yint - prevInt(idx,2);
+
+                %alpha is now angle of the intersection point's migration
+                if(a == 0)
+                    alpha = pi/2;
+                else
+                    alpha = abs(atan(b/a));
+                end
+
+                %phi is the angle from element center to intersection point
+                phi = atan2(yint - yi(j),xint - xi(j));
+
+                %gamma is the angle from element center to the previous
+                %intersection point
+                gam = atan2(prevInt(idx,2) - yi(j),prevInt(idx,1) - xi(j));
+
+                %figure out which direction the intersecting element is
+                %moving around element j, clockwise (positive) or
+                %counterclockwise (negative), and assign it to the
+                %calculation for shear overlap 's'.
+                temp = sqrt(a^2 + b^2)*abs(sin(alpha + phi));
+                if(phi > (pi/2) && gam < (-pi/2))
+                    %s = s +
+                end
+            else
+                %store the intersection
+                prevInt(idx,1) = xint;
+                prevInt(idx,2) = yint;
+            end
         end
 
         %forces between elements and blocks
@@ -369,65 +372,53 @@ while(distVert < distVertEnd)
         %NORTH BLOCK
         if(yi(j) + r(j) > nb(2,2))
             %NORMAL FORCE
-            U = r(j) - cos(bAngle)*(nb(1,2)+bSlope*(xi(j)-nb(1,1))-yi(j));
+            U = r(j) - cos(bAngle)*(nb(1,2) + bSlope*(xi(j) - nb(1,1)) - yi(j));
             if(U > 0)
-                kn = hertz(r(j),ravg,Chertz,U);
-                fn = kn*U;
+                fn = youngs_mod*U;
                 fx = fx + fn*sin(bAngle);
                 fy = fy - fn*cos(bAngle);
             end
 
+            %SHEAR FORCE
         end
 
         %EAST BLOCK
         U = (xi(j) + r(j)) - eb(1,1);
         if(U > 0)
             %NORMAL FORCE
-            kn = hertz(r(j),ravg,Chertz,U);
-            fn = kn*U;
+            fn = youngs_mod*U;
             fx = fx - fn;
 
             %SHEAR FORCE
-
         end
 
         %SOUTH BLOCK
         if((yi(j) - r(j)) < sb(1,2))
             %NORMAL FORCE
-            U = r(j) - cos(bAngle)*(yi(j)-sb(1,2)-bSlope*(xi(j)-sb(1,1)));
+            U = r(j) - cos(bAngle)*(yi(j) - sb(1,2) - bSlope*(xi(j) - sb(1,1)));
             if(U > 0)
-                kn = hertz(r(j),ravg,Chertz,U);
-                fn = kn*U;
+                fn = youngs_mod*U;
                 fx = fx - fn*sin(bAngle);
                 fy = fy + fn*cos(bAngle);
             end
+
+            %SHEAR FORCE
         end
 
         %WEST BLOCK
         U = wb(1,1) - (xi(j) - r(j));
         if(U > 0)
             %NORMAL FORCE
-            kn = hertz(r(j),ravg,Chertz,U);
-            fn = kn*U;
+            fn = youngs_mod*U;
             fx = fx + fn;
 
             %SHEAR FORCE
-
         end
 
+        %calculate element positions and rotations at next time step
         xf(j) = xi(j) + fx*(t^2)*inv2m(j);
         yf(j) = yi(j) + fy*(t^2)*inv2m(j);
-        thetaf(j) = thetaf(j) + .001*j*(2*rand(1) - 1);
 
-    end
-    %Tasks that must be done outside the main parfor loop to maintain
-    %iteration independence
-    for j = 2:N
-        for k = 1:j-1
-            [xint, yint] = elementIntersectionPoint(...
-                xi(j),yi(j),r(j),xi(k),yi(k),r(k));
-            prevInt(map2(j,k),:) = [xint, yint];
-        end
     end
 
     %advance the positions of the elements
@@ -435,40 +426,16 @@ while(distVert < distVertEnd)
     yi = yf;
     thetai = thetaf;
 
-    %regrouping (re-finding nearest neighbors to use in the search for
-    %overlaps)
-    regroupCount=regroupCount+1;
-    if(regroupCount==regroupInterval)
-        regroupCount=0;
-        G=group(xi,yi,r,maxr,regroupRadii);
+    %regrouping (re-finding nearest neighbors to use in the search for overlaps)
+    regroupCount = regroupCount + 1;
+    if(regroupCount == regroupInterval)
+        regroupCount = 0;
+        G = group(xi, yi, r, maxr, regroupRadii);
     end
 
-    %update loop criteria
+    %update loop end criteria
     i = i + 1;
     distVert = (wb(1,2) - wbTop0) + (ebTop0 - eb(1,2));
-
-    %storing data, expanding storage variables when necesarry
-
-    %JUST WRITE THIS SHIT TO A TEXT FILE, PREVENTING THE ARRAY FROM NEEDING TO
-    %BE EXPANDED EVERY 1000 ITERATIONS, WHICH INVOLVES COPYING HUGE AMOUNTS OF
-    %DATA FOR LARGE TRIALS
-    storeCount = storeCount + 1;
-    if(storeCount == storeInterval)
-        storeCount = 0;
-        storedIts = storedIts + 1;
-        if(storedIts > length(Estore))
-            temp = length(Estore);
-            Estore(temp + 1 : temp + 1000) = repmat(Estruct,1000,1);
-            Bstore(temp + 1 : temp + 1000) = repmat(Bstruct,1000,1);
-        end
-        Estore(storedIts).x = xi;
-        Estore(storedIts).y = yi;
-        Estore(storedIts).theta = thetai;
-        Bstore(storedIts).nb = nb;
-        Bstore(storedIts).eb = eb;
-        Bstore(storedIts).sb = sb;
-        Bstore(storedIts).wb = wb;
-    end
 
     %progress display
     progCount = progCount + 1;
@@ -490,46 +457,23 @@ while(distVert < distVertEnd)
         plotCount = 0;
         delete(elementHandles);
         delete(blockHandles);
-        elementHandles = lineElements(xi,yi,r,thetai,'off','k','-');
-        blockHandles = lineBlocks(nb,eb,sb,wb,bv,blockVert);
+        elementHandles = lineElements(xi, yi, r, thetai, 'off', 'k',' -');
+        blockHandles = lineBlocks(nb, eb, sb, wb, bv, blockVert);
         drawnow;
     end
 end
 
 %calculate average speed and print progress update
-averageSpeed=i/etime(clock,startClock);
-if(progInterval~=0)
-    fprintf(repmat('\b',1,length(progstr)));
+averageSpeed = i/etime(clock,startClock);
+if(progInterval ~= 0)
+    fprintf(repmat('\b', 1, length(progstr)));
 end
 fprintf('Main program iterations complete\n');
-fprintf('%d Iterations, Average Speed=%g its/second\n',i,averageSpeed);
-
-%getting rid of empty space in the storage arrays
-Estore(storedIts+1:end)=[];
-Bstore(storedIts+1:end)=[];
-
-%tracing movement in a plot
-traceCompletedTrial(Estore,r,Bstore,'on','on');
-title('Completed Trial','fontsize',18,'interpreter','latex');
-drawnow;
+fprintf('%d Iterations, Average Speed=%g its/second\n', i, averageSpeed);
 
 %set output variables, if any
-varargout=cell(0);
+varargout = cell(0);
 
-%saving the current variables to a .mat file, if desired
-if(matSaving)
-    fprintf('Saving variables');
-    if(matOverwrite)
-        save(ofile);
-    else
-        ofile = matSaveName(ofile);
-        save(ofile);
-    end
-    fprintf(' to: %s.mat\n',ofile);
-end
-
-%figure(2);
-%grabData(Estore,'theta','all','on','simul',itVertOn,storeInterval,i);
 
 totalTime = etime(clock,startClock);
 hours = floor(totalTime/3600);
