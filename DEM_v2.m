@@ -20,8 +20,8 @@ if(nargin == 0)   %Without an input variables are defined in the menus below
 %-------------------------------------------------------------------------
 %Number, configuration, and size distribution of the elements
 
-nrows = 25;            %Number of initial rows
-ncols = 15;            %Number of initial columns
+nrows = 2;            %Number of initial rows
+ncols = 3;            %Number of initial columns
                         %For irregular arrangements, the number of rows and
                         %columns are defined along the outer edges. If the
                         %elements are randomly sized (arrangement == 5),
@@ -54,8 +54,8 @@ demo = 0;                     %Toggle for plotting commands placed throughout
 
 rho = 2800;           %Rock density
 youngs_mod = 3.4e8;       %Young's modulus
-shear_mod = 1;          %Shear modulus
-poissonsq = .25;      %Poisson's ratio squared
+poissons = .5;      %Poisson's ratio
+shear_mod = youngs_mod/(2*(1 + poissons));     %Shear modulus
 staticFriction = .5;  %Static friction coefficient
 kineticFriction = .4; %Kinetic friction coefficient
 %-------------------------------------------------------------------------
@@ -68,7 +68,7 @@ ftc = .4;             %factor scaling the time step from the critical time
 fvc = .01;            %percentage of the critical shear velocity that adaptive
                         %blocks will automatically assume. Recommend .001-.1
                         %with the smaller values for larger arrays.
-percHorzOff = .01;    %horizontal distance traveled by shearing blocks before
+percHorzOff = .005;    %horizontal distance traveled by shearing blocks before
                         %their horizontal velocity is set to zero, as a
                         %percentage of the total original width of the
                         %array.
@@ -79,7 +79,7 @@ percVertEnd = 1;      %percentage of the total length of the array that, once
 %-------------------------------------------------------------------------
 %Program controls, or non-physical parameters
 
-plotInterval = 1e4;   %Number of iterations between each replotting. Use
+plotInterval = 0e1;   %Number of iterations between each replotting. Use
                         %zero to turn in-program plotting off.
 progInterval = 1e3;   %Iterations between progress updates
 regroupInterval = 100;%Iterations between nearest neighbor regroupings
@@ -195,8 +195,6 @@ for i = 1:N
     inv2m(i) = 1/(2*rho*pi*r(i)^2);     %1/2m for displacement calculations
     inv2I(i) = 1/(rho*pi*r(i)^4);       %1/2I for rotation calculations
 end
-Chertz = ((pi*youngs_mod)/(1 - poissonsq))/2;
-Cmindlin = (pi*youngs_mod)/(4*(1-poissonsq));
 ravg = mean(r);
 
 %calculate total horizontal and vertical distance the shearing blocks will move
@@ -216,18 +214,31 @@ maxr = max(r);
 G = group(xi, yi, r, maxr, regroupRadii);
 regroupCount = 0;
 
+%Allocate variables tracking contacts, for torques
+prevInt = zeros(N_contacts,2); %element-element intersection points
+S = zeros(N_contacts,1); %total shear overlap of element-element contacts
+S_store = zeros(N_contacts, 1e4);
+prevInt_nb = zeros(N,2); %element-north block intersection points
+S_nb = zeros(N,1); %total shear overlap of north block contacts
+prevInt_eb = zeros(N,2); %element-east block intersection points
+S_eb = zeros(N,1); %total shear overlap of east block contacts
+prevInt_sb = zeros(N,2); %element-south block intersection points
+S_sb = zeros(N,1); %total shear overlap of south block contacts
+prevInt_wb = zeros(N,2); %element-west block intersection points
+S_wb = zeros(N,1); %total shear overlap of west block contacts
+
 %Plotting the initialized array, storing handles for in-loop replotting
-elementHandles = plotElements(xi, yi, r, 'off', 'k-');
+[elementHandles, labelHandles] = plotElements(xi, yi, r, 'on', 'k-');
 blockHandles = plotBlocks(nb, eb, sb, wb, bv, blockVert);
-title('Initial array', 'fontsize',18, 'interpreter', 'latex');
-xlabel('x-dimension (m)', 'fontsize',16, 'interpreter', 'latex');
-ylabel('y-dimension (m)', 'fontsize',16, 'interpreter', 'latex');
+title('Initial array', 'fontsize', 18, 'interpreter', 'latex');
+xlabel('x-dimension (m)', 'fontsize', 16, 'interpreter', 'latex');
+ylabel('y-dimension (m)', 'fontsize', 16, 'interpreter', 'latex');
 drawnow;
 if(plotInterval ~= 0)
     plotInterval = round(plotInterval);
-    fprintf('Plotting every %d iterations.\n', plotInterval);
+    fprintf('Replotting every %d iterations.\n', plotInterval);
 end
-plotCount = 0;
+plotCount = 1;
 title('Trial In Progress', 'fontsize', 18, 'interpreter', 'latex');
 
 %progress updates
@@ -238,19 +249,11 @@ if(progInterval ~= 0)
         num2str(progInterval)];
     fprintf(progstr);
 end
-progCount = 0;
-
-%Allocate x,y pairs for the previous "intersection points" between elements,
-%which must be stored for calculation of the shear forces and torques.
-%Elements cannot exert forces on themselves and T(i,j) = T(j,i), so the
-%number of (x,y) pairs stored needs to be sum(1:N-1), or N*(N-1)/2. It
-%could be done easily with an NxN array and lots of empty space, but the
-%amount of information stored can be minimized.
-prevInt = zeros(N_contacts, 2);
+progCount = 1;
 
 %initializing loop variables
 distVert = 0;
-i = 0;
+i = 1;
 
 %timing
 startClock = clock;
@@ -293,14 +296,16 @@ while(distVert < distVertEnd)
         %find overlapping elements, 'I' contains contacting element indices,
         %and U contains the respective overlap magnitudes.
         [I,U] = findNormalOverlaps(1, xi(G{j}), yi(G{j}), r(G{j}), 0);
-        I=G{j}(I);
+        I = G{j}(I);
 
-        %use running sums for the force components due to several contacts
+        %use running sums for the forces/torques over mulitple contacts
         fx = 0;
         fy = 0;
+        tau = 0;
 
         %forces between contacting elements
         for k = 1:length(I)
+
             %NORMAL FORCE
             fn = youngs_mod*U(k);
             %alpha is the angle between element centers
@@ -330,56 +335,62 @@ while(distVert < distVertEnd)
             %subsequent iterations there will be previous intersection points
             %and the shear force is computed.
             if((prevInt(idx,1) ~= 0) && (prevInt(idx,2) ~= 0))
-
-                %shear overlap
-                s = 0;
-
-                %first the component of S from intersection point migration
-                a = xint - prevInt(idx,1);
-                b = yint - prevInt(idx,2);
-
-                %alpha is now angle of the intersection point's migration
-                if(a == 0)
-                    alpha = pi/2;
-                else
-                    alpha = abs(atan(b/a));
+                if((wb(1,2) - wbTop0) + (ebTop0 - eb(1,2)) > distVertEnd/10)
+                    temp = 0;
                 end
-
-                %phi is the angle from element center to intersection point
-                phi = atan2(yint - yi(j),xint - xi(j));
-
-                %gamma is the angle from element center to the previous
-                %intersection point
-                gam = atan2(prevInt(idx,2) - yi(j),prevInt(idx,1) - xi(j));
-
-                %figure out which direction the intersecting element is
-                %moving around element j, clockwise (positive) or
-                %counterclockwise (negative), and assign it to the
-                %calculation for shear overlap 's'.
-                temp = sqrt(a^2 + b^2)*abs(sin(alpha + phi));
-                if(phi > (pi/2) && gam < (-pi/2))
-                    %s = s +
+                %components of intersection point migration
+                dx = xint - prevInt(idx,1);
+                dy = yint - prevInt(idx,2);
+                %angle of intersection point migration
+                alpha = atan2(dy, dx);
+                %components of vector from element center to intersection point
+                a = xint - xi(j);
+                b = yint - yi(j);
+                %angle from element center to intersection point
+                phi = atan2(b, a);
+                %shear displacement parallel to the element surface
+                S(idx) = S(idx) - sqrt(dx^2 + dy^2)*sin(alpha + phi);
+                S_store(idx,i) = S(idx);
+                %disp(idx);
+                %disp(S);
+                %check that the friction shear limit isn't exceeded
+                fparallel = S(idx)*shear_mod;
+                if(abs(fparallel) > fn*staticFriction)
+                    fparallel = fparallel*kineticFriction;
+                    S(idx) = 0;
                 end
-            else
-                %store the intersection
-                prevInt(idx,1) = xint;
-                prevInt(idx,2) = yint;
+                %add to the cumulative torque for the element
+                tau = tau + r(j)*fparallel;
+                %add to the cumulative fx and fy
+
             end
+            %store the intersection
+            prevInt(idx,1) = xint;
+            prevInt(idx,2) = yint;
         end
 
         %forces between elements and blocks
 
         %NORTH BLOCK
         if(yi(j) + r(j) > nb(2,2))
-            %NORMAL FORCE
+
             U = r(j) - cos(bAngle)*(nb(1,2) + bSlope*(xi(j) - nb(1,1)) - yi(j));
             if(U > 0)
+
+                %NORMAL FORCE
                 fn = youngs_mod*U;
                 fx = fx + fn*sin(bAngle);
                 fy = fy - fn*cos(bAngle);
+
+                %SHEAR FORCE
+                if((prevInt_nb(j,1)) ~= 0 && (prevInt_nb(j,2) ~= 0))
+
+                end
+                prevInt_nb(j,1) =
             end
 
-            %SHEAR FORCE
+
+
         end
 
         %EAST BLOCK
@@ -418,7 +429,7 @@ while(distVert < distVertEnd)
         %calculate element positions and rotations at next time step
         xf(j) = xi(j) + fx*(t^2)*inv2m(j);
         yf(j) = yi(j) + fy*(t^2)*inv2m(j);
-
+        thetaf(j) = thetai(j) + tau*(t^2)*inv2I(j);
     end
 
     %advance the positions of the elements
@@ -445,23 +456,33 @@ while(distVert < distVertEnd)
         clock2 = clock;
         temp = progInterval/etime(clock2,clock1);
         clock1 = clock2;
-        progstr = ['Iterations=',num2str(i),', ',...
-            num2str(round(100*distVert/distVertEnd)),' percent shear, ',...
-            'Speed=',num2str(temp),' its/s'];
+        progstr = ['Iterations = ',num2str(i),', ',...
+            num2str(round(1000*distVert/distVertEnd)/10),...
+            ' percent shear, ', 'Speed = ',num2str(temp),' its/s'];
         fprintf(progstr);
     end
 
     %in-loop plotting, can be disabled with plotInterval = 0
-    plotCount = plotCount+1;
+    plotCount = plotCount + 1;
     if(plotCount == plotInterval);
-        plotCount = 0;
+        plotCount = 1;
         delete(elementHandles);
+        delete(labelHandles)
         delete(blockHandles);
-        elementHandles = lineElements(xi, yi, r, thetai, 'off', 'k',' -');
+        [elementHandles,labelHandles] = lineElements(xi, yi, r, thetai,...
+            'on', 'k',' -');
         blockHandles = lineBlocks(nb, eb, sb, wb, bv, blockVert);
         drawnow;
     end
 end
+
+%final plot
+delete(elementHandles);
+delete(labelHandles);
+delete(blockHandles);
+lineElements(xi, yi, r, thetai, 'on', 'k',' -');
+lineBlocks(nb, eb, sb, wb, bv, blockVert);
+drawnow;
 
 %calculate average speed and print progress update
 averageSpeed = i/etime(clock,startClock);
@@ -469,10 +490,10 @@ if(progInterval ~= 0)
     fprintf(repmat('\b', 1, length(progstr)));
 end
 fprintf('Main program iterations complete\n');
-fprintf('%d Iterations, Average Speed=%g its/second\n', i, averageSpeed);
+fprintf('%d Iterations, Average Speed = %g its/second\n', i, averageSpeed);
 
 %set output variables, if any
-varargout = cell(0);
+varargout = {thetaf, S_store};
 
 
 totalTime = etime(clock,startClock);
