@@ -2,7 +2,7 @@
 %
 %A Distinct Element Model to Investigate Crustal Rotation in Shear Zones
 %
-%Written by Mark Baum, 6/5/15 - present
+%Written by Mark Baum, 12/2/14 - present
 %Continued from a Senior Thesis for the Dartmouth Department of Earth
 %   Sciences, advised by Professor Leslie Sonder
 %
@@ -20,14 +20,14 @@ if(nargin == 0)   %Without an input variables are defined in the menus below
 %-------------------------------------------------------------------------
 %Number, configuration, and size distribution of the elements
 
-nrows = 2;            %Number of initial rows
+nrows = 3;            %Number of initial rows
 ncols = 3;            %Number of initial columns
                         %For irregular arrangements, the number of rows and
                         %columns are defined along the outer edges. If the
                         %elements are randomly sized (arrangement == 5),
                         %these inputs define the approximate number of
                         %elements in the outside edges only.
-arrangement = 5;      %Different modes for the distribution of element sizes:
+arrangement = 2;      %Different modes for the distribution of element sizes:
                         %1 - uniform radii, cubic packing
                         %2 - uniform radii, hexagonal (closest) packing
                         %3 - column sizes DEcreasing by factors of 2 into
@@ -79,7 +79,7 @@ percVertEnd = 1;      %percentage of the total length of the array that, once
 %-------------------------------------------------------------------------
 %Program controls, or non-physical parameters
 
-plotInterval = 0e1;   %Number of iterations between each replotting. Use
+plotInterval = 1e3;   %Number of iterations between each replotting. Use
                         %zero to turn in-program plotting off.
 progInterval = 1e3;   %Iterations between progress updates
 regroupInterval = 100;%Iterations between nearest neighbor regroupings
@@ -143,12 +143,14 @@ end
 
 %number of elements
 N = length(xi);
-%number of possible unique contacts between elements
-N_contacts = (N^2 - N)/2;
 
-%Allocate arrays used to advance element positions and rotations
+%Allocate arrays used to advance element positions and rotations, including
+%arrays to store the previous iterations values
+xl = zeros(1,N);
 xf = zeros(1,N);
+yl = zeros(1,N);
 yf = zeros(1,N);
+thetal = zeros(1,N);
 thetai = zeros(1,N);
 thetaf = zeros(1,N);
 
@@ -205,7 +207,7 @@ distHorzOff = percHorzOff*(eb(1,1) - wb(1,1));
 %velocity is set to .01 times the critical shear block velocity because,
 %even though the blocks will move horizontally first, the critical shear
 %block velocity is still a good reference point.
-t = 5;
+t = 1;
 bv = .1;
 blockVert = 0;  %0 for blocks moving horizontally, 1 for vertically
 
@@ -214,17 +216,17 @@ maxr = max(r);
 G = group(xi, yi, r, maxr, regroupRadii);
 regroupCount = 0;
 
-%Allocate variables tracking contacts, for torques
+%Allocate variables for tracking contacts
+%number of possible unique contacts between elements
+N_contacts = (N^2 - N)/2;
+%storing previous intersection points
 prevInt = zeros(N_contacts,2); %element-element intersection points
+%storing previous shear overlaps/displacements
 S = zeros(N_contacts,1); %total shear overlap of element-element contacts
-S_store = zeros(N_contacts, 1e4);
-prevInt_nb = zeros(N,2); %element-north block intersection points
+S_store = zeros(N_contacts,1e6);
 S_nb = zeros(N,1); %total shear overlap of north block contacts
-prevInt_eb = zeros(N,2); %element-east block intersection points
 S_eb = zeros(N,1); %total shear overlap of east block contacts
-prevInt_sb = zeros(N,2); %element-south block intersection points
 S_sb = zeros(N,1); %total shear overlap of south block contacts
-prevInt_wb = zeros(N,2); %element-west block intersection points
 S_wb = zeros(N,1); %total shear overlap of west block contacts
 
 %Plotting the initialized array, storing handles for in-loop replotting
@@ -299,75 +301,109 @@ while(distVert < distVertEnd)
         I = G{j}(I);
 
         %use running sums for the forces/torques over mulitple contacts
-        fx = 0;
-        fy = 0;
-        tau = 0;
+        fx_sum = 0;
+        fy_sum = 0;
+        tau_sum = 0;
+
+        %set flags to false to avoid duplicating calculations for contacts
+        contact_flags = true(N_contacts,1);
+        fx = zeros(N_contacts,1);
+        fy = zeros(N_contacts,1);
+        tau = zeros(N_contacts,1);
 
         %forces between contacting elements
         for k = 1:length(I)
 
-            %NORMAL FORCE
-            fn = youngs_mod*U(k);
-            %alpha is the angle between element centers
-            alpha = abs(atan((yi(I(k)) - yi(j))/(xi(I(k)) - xi(j))));
-            %x component
-            if(xi(j) < xi(I(k)))
-                fx = fx - fn*cos(alpha);
-            else
-                fx = fx + fn*cos(alpha);
-            end
-            %y component
-            if(yi(j) < yi(I(k)))
-                fy = fy - fn*sin(alpha);
-            else
-                fy = fy + fn*sin(alpha);
-            end
-
-            %SHEAR FORCE
-            [xint,yint] = elementIntersectionPoint(xi(j), yi(j), r(j),...
-                xi(I(k)), yi(I(k)), r(I(k)));
             %find the index of the 1D storage array for the pair of
             %elements under consideration, elements 'j' and 'I(k)'.
             idx = map2(j,I(k));
-            %Interserction points initialize at zero, but without a real
-            %previous value, the shear force can't be computed. At the first
-            %iteration the blocks contact, no shear force is computed. In
-            %subsequent iterations there will be previous intersection points
-            %and the shear force is computed.
-            if((prevInt(idx,1) ~= 0) && (prevInt(idx,2) ~= 0))
-                if((wb(1,2) - wbTop0) + (ebTop0 - eb(1,2)) > distVertEnd/10)
-                    temp = 0;
-                end
-                %components of intersection point migration
-                dx = xint - prevInt(idx,1);
-                dy = yint - prevInt(idx,2);
-                %angle of intersection point migration
-                alpha = atan2(dy, dx);
-                %components of vector from element center to intersection point
-                a = xint - xi(j);
-                b = yint - yi(j);
-                %angle from element center to intersection point
-                phi = atan2(b, a);
-                %shear displacement parallel to the element surface
-                S(idx) = S(idx) - sqrt(dx^2 + dy^2)*sin(alpha + phi);
-                S_store(idx,i) = S(idx);
-                %disp(idx);
-                %disp(S);
-                %check that the friction shear limit isn't exceeded
-                fparallel = S(idx)*shear_mod;
-                if(abs(fparallel) > fn*staticFriction)
-                    fparallel = fparallel*kineticFriction;
-                    S(idx) = 0;
-                end
-                %add to the cumulative torque for the element
-                tau = tau + r(j)*fparallel;
-                %add to the cumulative fx and fy
+            %only perform calculations for one side of the contact, applying
+            %equal and opposite forces for the contacting element
+            if(contact_flags(idx))
 
+                %NORMAL FORCE
+                fn = youngs_mod*U(k);
+                %alpha is the angle between element centers
+                alpha = abs(atan((yi(I(k)) - yi(j))/(xi(I(k)) - xi(j))));
+                %x component
+                if(xi(j) < xi(I(k)))
+                    fx(idx) = -fn*cos(alpha);
+                else
+                    fx(idx) = fn*cos(alpha);
+                end
+                %y component
+                if(yi(j) < yi(I(k)))
+                    fy(idx) = -fn*sin(alpha);
+                else
+                    fy(idx) = fn*sin(alpha);
+                end
+                %add force components to running sums
+                fx_sum = fx_sum + fx(idx);
+                fy_sum = fy_sum + fy(idx);
+
+                %SHEAR FORCE
+                %get the "intersection point"
+                [xint,yint] = elementIntersectionPoint(xi(j), yi(j), r(j),...
+                  xi(I(k)), yi(I(k)), r(I(k)));
+                %Interserction points initialize at zero, but without a real
+                %previous value, the shear force can't be computed. At the first
+                %iteration the blocks contact, no shear force is computed. In
+                %subsequent iterations there will be previous intersection
+                %points and the shear force is computed.
+                if((prevInt(idx,1) ~= 0) && (prevInt(idx,2) ~= 0))
+                    if((wb(1,2) - wbTop0) + (ebTop0 - eb(1,2)) > distVertEnd/10)
+                        temp = 0;
+                    end
+
+                    %components of shear displacement due to intersection point
+                    %migration, relative to the element
+                    dx = xint - prevInt(idx,1) - (xi(j) - xl(j));
+                    dy = yint - prevInt(idx,2) - (yi(j) - yl(j));
+                    %angle of intersection point migration
+                    alpha = atan2(dy, dx);
+                    %components of vector from element center to intersection pt
+                    a = xint - xi(j);
+                    b = yint - yi(j);
+                    %distance from element center to intersection point
+                    dist = sqrt(a^2 + b^2);
+                    %angle from element center to intersection point
+                    phi = atan2(b, a);
+                    %shear displacement parallel to the element surface
+                    S(idx) = S(idx) - sqrt(dx^2 + dy^2)*sin(alpha + phi);
+                    if(i <= length(S_store))
+                      S_store(idx,i) = S(idx);
+                    end
+
+                    %component of shear disp due to the element's rotation
+                    dtheta = thetai(j) - thetal(j);
+                    S(idx) = S(idx) - dtheta*d;
+
+                    %check that the friction shear limit isn't exceeded
+                    fparallel = S(idx)*shear_mod;
+                    if(abs(fparallel) > fn*staticFriction)
+                        fparallel = fparallel*kineticFriction;
+                        S(idx) = 0;
+                    end
+
+                    %store the torque
+                    tau(idx) = dist*fparallel;
+                    %add to the cumulative torque for the element
+                    tau_sum = tau_sum + tau(idx);
+                    %add to the cumulative fx and fy
+
+                end
+                %store the intersection point
+                prevInt(idx,1) = xint;
+                prevInt(idx,2) = yint;
+                %set the contact flag
+                contact_flags(idx) = false;
+            else
+                fx_sum = fx_sum - fx(idx);
+                fy_sum = fy_sum - fy(idx);
+                tau_sum = tau_sum - tau(idx);
             end
-            %store the intersection
-            prevInt(idx,1) = xint;
-            prevInt(idx,2) = yint;
         end
+        %store forces between
 
         %forces between elements and blocks
 
@@ -379,14 +415,10 @@ while(distVert < distVertEnd)
 
                 %NORMAL FORCE
                 fn = youngs_mod*U;
-                fx = fx + fn*sin(bAngle);
-                fy = fy - fn*cos(bAngle);
+                fx_sum = fx_sum + fn*sin(bAngle);
+                fy_sum = fy_sum - fn*cos(bAngle);
 
                 %SHEAR FORCE
-                if((prevInt_nb(j,1)) ~= 0 && (prevInt_nb(j,2) ~= 0))
-
-                end
-                prevInt_nb(j,1) =
             end
 
 
@@ -398,9 +430,21 @@ while(distVert < distVertEnd)
         if(U > 0)
             %NORMAL FORCE
             fn = youngs_mod*U;
-            fx = fx - fn;
+            fx_sum = fx_sum - fn;
 
             %SHEAR FORCE
+            dy = yl(j) - yi(j) + d;
+            S_eb(j) = S_eb(j) + dy;
+            fparallel = S_eb(j)*shear_mod;
+            if(abs(fparallel) > fn*staticFriction)
+              fparallel = fparallel*kineticFriction;
+            end
+
+            %rotation
+            dtheta = thetai(j) - thetal(j);
+            S_wb(j) = S_wb(j) - dtheta*(r(j) - U);
+
+            tau_sum = tau_sum + (r(j) - U)*fparallel;
         end
 
         %SOUTH BLOCK
@@ -409,8 +453,8 @@ while(distVert < distVertEnd)
             U = r(j) - cos(bAngle)*(yi(j) - sb(1,2) - bSlope*(xi(j) - sb(1,1)));
             if(U > 0)
                 fn = youngs_mod*U;
-                fx = fx - fn*sin(bAngle);
-                fy = fy + fn*cos(bAngle);
+                fx_sum = fx_sum - fn*sin(bAngle);
+                fy_sum = fy_sum + fn*cos(bAngle);
             end
 
             %SHEAR FORCE
@@ -421,20 +465,38 @@ while(distVert < distVertEnd)
         if(U > 0)
             %NORMAL FORCE
             fn = youngs_mod*U;
-            fx = fx + fn;
+            fx_sum = fx_sum + fn;
 
             %SHEAR FORCE
+
+            %intersection point migration
+            dy = d - yl(j) + yi(j);
+            S_wb(j) = S_wb(j) + dy;
+            fparallel = S_wb(j)*shear_mod;
+            if(abs(fparallel) > fn*staticFriction)
+              fparallel = fparallel*kineticFriction;
+            end
+
+            %rotation
+            dtheta = thetai(j) - thetal(j);
+            S_wb(j) = S_wb(j) - dtheta*(r(j) - U);
+
+            tau_sum = tau_sum + (r(j) - U)*fparallel;
         end
 
-        %calculate element positions and rotations at next time step
-        xf(j) = xi(j) + fx*(t^2)*inv2m(j);
-        yf(j) = yi(j) + fy*(t^2)*inv2m(j);
-        thetaf(j) = thetai(j) + tau*(t^2)*inv2I(j);
+        %calculate element positions and rotations for next time step
+        xf(j) = xi(j) + fx_sum*(t^2)*inv2m(j);
+        yf(j) = yi(j) + fy_sum*(t^2)*inv2m(j);
+        thetaf(j) = thetai(j) + tau_sum*(t^2)*inv2I(j);
+
     end
 
     %advance the positions of the elements
+    xl = xi;
     xi = xf;
+    yl = yi;
     yi = yf;
+    thetal = thetai;
     thetai = thetaf;
 
     %regrouping (re-finding nearest neighbors to use in the search for overlaps)
@@ -475,6 +537,7 @@ while(distVert < distVertEnd)
         drawnow;
     end
 end
+S_store = S_store(:,1:i);
 
 %final plot
 delete(elementHandles);
