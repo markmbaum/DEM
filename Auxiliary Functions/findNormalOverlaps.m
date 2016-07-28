@@ -5,7 +5,7 @@ function [I,U] = findNormalOverlaps(i,x,y,r,threshold)
 %   [I,U] = findNormalOverlaps(i,x,y,r,threshold);
 %
 %   i - index of element being investigated
-%   x,y,r - full element location and radius arrays
+%   x,y,r - element location and radius arrays
 
 I = zeros(1,5);
 U = zeros(1,5);

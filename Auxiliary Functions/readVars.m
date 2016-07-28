@@ -12,7 +12,7 @@ end
 N = length(r);
 %count the number of lines to get the number of iterations
 %read junk lines
-for i = 1:3
+for i = 1:2
     l = fgetl(ifile);
 end
 %count lines of data
@@ -27,7 +27,7 @@ count = count/N;
 fclose(ifile);
 ifile = fopen(file_name, 'r');
 %read junk lines
-for i = 1:5
+for i = 1:4
     l = fgetl(ifile);
 end
 %read data

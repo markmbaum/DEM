@@ -33,6 +33,7 @@ else %mac
                     Z{count} = temp(j+L:end);
                 end
             end
+            disp(temp(j:j+L-1)); 
         end
         j = j + 1;
     end
