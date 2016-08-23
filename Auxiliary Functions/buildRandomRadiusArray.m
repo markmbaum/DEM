@@ -6,7 +6,6 @@ function[x,y,r]=buildRandomRadiusArray(nrows,ncols,randBounds,demo)
 %   nrows - number of rows
 %   ncols - number of columns
 %   randBounds - new element size constraints
-%   minr - minimum tolerable radius for elements in the array
 %   demo - toggle for illustrative plotting commands
 
 %------------------------------------------------------nrw-------------------
@@ -95,8 +94,8 @@ while(y(i)>(y(i-1) - r(i-1)))
     %DEMO
 end
 
-y = y - y(i) + r(i);
-x = x - x(i) + r(i);
+y = y - y(i);
+x = x - x(i);
 
 %DEMO
     if(demo~=0)

@@ -17,14 +17,14 @@ function [varargout] = DEM_v2(varargin)
 if(nargin == 0)   %Without an input, variables are defined in the menus below
 %-------------------------------------------------------------------------
 %Number, configuration, and size distribution of the elements
-nrows = 4;            %Number of initial rows
-ncols = 3;            %Number of initial columns
+nrows = 10;            %Number of initial rows
+ncols = 6;            %Number of initial columns
                         %For irregular arrangements, the number of rows and
                         %columns are defined along the outer edges. If the
                         %elements are randomly sized (arrangement == 5),
                         %these inputs define the approximate number of
                         %elements in the outside edges only.
-arrangement = 1;      %Different modes for the distribution of element sizes:
+arrangement = 2;      %Different modes for the distribution of element sizes:
                         %1 - uniform radii, cubic packing
                         %2 - uniform radii, hexagonal (closest) packing
                         %3 - column sizes DEcreasing by factors of 2 into
@@ -32,13 +32,13 @@ arrangement = 1;      %Different modes for the distribution of element sizes:
                         %4 - column sizes INcreasing by factors of 2 into
                             %the center of the array
                         %5 - randomly sized elements
-mean_radius = 1e9;   %Average radius size (doesn't apply for arrangement 5)
+mean_radius = 5e3;   %Average radius size (doesn't apply for arrangement 5) (m)
 %------------------------------------------
 %For arrangement 5, randomly sized elements
 
-rand_bounds = 1e3*[10,50];      %Size limits for the generation of random
-                            %   element radii for arrangement 5
-demo = 0;                   %Toggle for plotting commands placed throughout
+rand_bounds = 5e3*[1,10];      %Size limits for the generation of random
+                            %   element radii for arrangement 5 (m)
+demo = 0.1;                   %Toggle for plotting commands placed throughout
                             %   the functions that generate the randomly
                             %   sized arrays. These functions are:
                             %   auto_adjust, auto_edge_adjust,
@@ -49,17 +49,18 @@ demo = 0;                   %Toggle for plotting commands placed throughout
 %-------------------------------------------------------------------------
 %Physical constants and characteristics
 
-depth = 25e3;           %Brittle crust depth
-viscosity = 1e21;       %Viscosity of underlying ductile flow
-z_trans_frac = 0.2;%Brittle-ductile transition thickness as frac of r_avg
-rho = 2800;             %Rock density
-youngs_mod = 3.4e8;     %Young's modulus
-poissons = .5;          %Poisson's ratio
-shear_mod = youngs_mod/(2*(1 + poissons));     %Shear modulus
-static_friction = .5;   %Static friction coefficient
-kinetic_friction = .4;  %Kinetic friction coefficient
+depth_frac = 5;         %Brittle crust depth as fraction of average radius (-)
+slip_rate = 3e-10
+strain_rate = 1e-15     %Shear strain rate of underlying flow (1/s)
+viscosity = 1e21;       %Viscosity of underlying ductile flow (kg/m*s)
+rho = 2800;             %Rock density (kg/m^3)
+youngs_mod = 3.4e8;     %Young's modulus (kg/m*s^2)
+poissons = .5;          %Poisson's ratio (-)
+shear_mod = youngs_mod/(2*(1 + poissons)); %Shear modulus (kg/m*s^2)
+static_friction = .9;   %Static friction coefficient (-)
+kinetic_friction = .4;  %Kinetic friction coefficient (-)
 %-------------------------------------------------------------------------
-%Boundary conditions
+%Boundary
 
 perc_horz_off = .005;   %horizontal distance traveled by shearing blocks before
                         %their horizontal velocity is set to zero, as a
@@ -72,7 +73,7 @@ perc_vert_end = 1;      %percentage of the total length of the array that, once
 %-------------------------------------------------------------------------
 %Program controls
 plot_interval = 1e2;   %Number of iterations between each replotting. Use
-                        %zero to turn in-program plotting off.
+                       %zero to turn in-program plotting off.
 prog_interval = 1e2;   %Iterations between progress updates
 regroup_interval = 100;%Iterations between nearest neighbor regroupings
 regroup_radii = 1.5;   %Control the size of search groups. It's the factor
@@ -104,20 +105,14 @@ elseif(nargin == 1)
             evalc([modelVariables{i,1},'=',num2str(modelVariables{i,2})]);
         end
     end
+    %varargin must be cleared so that it isn't saved and later loaded into
+    %other functions
+    clear varargin;
 else
     error('Multiple input variables not supported');
 end
 %-------------------------------------------------------------------------
-%varargin must be cleared so that it isn't saved and later loaded into
-    %other functions
-clear varargin;
-figure(1); %default plotting destination
-%-------------------------------------------------------------------------
-%-------------------------------------------------------------------------
-%-------------------------------------------------------------------------
-%MAIN PROGRAM
-
-%Initializing the element array
+%Initialize the element array
 switch arrangement
     case 1
         [xi, yi, r] = buildUniformRadiusArray(nrows, ncols, mean_radius, 'c');
@@ -132,9 +127,22 @@ switch arrangement
         %the error output and is not helpful with debugging
         [xi, yi, r] = buildRandomRadiusArray(nrows, ncols, rand_bounds, demo);
 end
+%-------------------------------------------------------------------------
+%-------------------------------------------------------------------------
+%-------------------------------------------------------------------------
+%MAIN
 
-%number of elements
-N = length(xi);
+N = length(xi); %number of elements
+R_0 = max(r); %max radius of original array used as scaling length
+[~, ~, ymin, ymax] = arrayEdges(xi, yi, r);
+T = (ymax - ymin)/slip_rate %total time for 100 percent shear
+
+%nondimensionalize
+T_hat = T*(youngs_mod/viscosity)
+slip_rate_hat = slip_rate*(viscosity/(youngs_mod*R_0))
+r = r/R_0;
+xi = xi/R_0;
+yi = yi/R_0;
 
 %Allocate arrays used to advance element positions and rotations, including
 %arrays to store the previous iterations values
@@ -157,60 +165,52 @@ thetaf = zeros(1,N);
 %  [left x coordinate, left y coordinate;
 %   right x coorinate, right y coordinate]
 %and so on...
-%Extra variables like wbTop0 are used to track block progress over the duration
-%of the trial
-%allocate arrays
+%Extra variables like wbTop0 are used to track block progress over the
+%duration of the trial
+%allocate block arrays
 nb = zeros(2,2); eb = zeros(2,2); sb = zeros(2,2); wb = zeros(2,2);
+%get element array edges
+[xmin,xmax,ymin,ymax] = arrayEdges(xi, yi, r);
 %populate northern y coordinates of blocks
-[~,idx] = max(yi);
-y = yi(idx) + r(idx);
-nb(:,2) = y; wb(1,2) = y; eb(1,2) = y;
+nb(:,2) = ymax; wb(1,2) = ymax; eb(1,2) = ymax;
 %populate southern y coordinates of blocks
-[~,idx] = min(yi);
-y = yi(idx) - r(idx);
-sb(:,2) = y; wb(2,2) = y; eb(2,2) = y;
+sb(:,2) = ymin; wb(2,2) = ymin; eb(2,2) = ymin;
 %populate western x coordinates of blocks
-[~,idx] = min(xi);
-x = xi(idx) - r(idx);
-wb(:,1) = x; nb(1,1) = x; sb(1,1) = x;
+wb(:,1) = xmin; nb(1,1) = xmin; sb(1,1) = xmin;
 %populate eastern x coordinates of blocks
-[~,idx] = max(xi);
-x = xi(idx) + r(idx);
-eb(:,1) = x; nb(2,1) = x; sb(2,1) = x;
+eb(:,1) = xmax; nb(2,1) = xmax; sb(2,1) = xmax;
 %set tracking variables
 wbTop0 = wb(1,2);
 ebTop0 = eb(1,2);
 width0 = eb(1,1) - wb(1,1);
 
-%pre-calculate physical quantities, masses and moments of inertia
+%calculate physical quantities
+max_r = max(r);
+depth_hat = max_r*depth_frac;
 M = zeros(N,1);
 inv2m = zeros(N,1);
 inv2I = zeros(N,1);
 for i = 1:N
-    M = rho*depth*pi*r(i)^2;
-    inv2m(i) = 1/(2*depth*rho*pi*r(i)^2);   %1/2m for displacement calculations
-    inv2I(i) = 1/(depth*rho*pi*r(i)^4);     %1/2I for rotation calculations
+    M(i) = rho*depth_hat*pi*r(i)^2;
+    inv2m(i) = 1/(2*depth_hat*rho*pi*r(i)^2);   %1/2m for displacement calculations
+    inv2I(i) = 1/(depth_hat*rho*pi*r(i)^4);     %1/2I for rotation calculations
 end
-ravg = mean(r);
-z_trans = ravg*z_trans_frac;
 
 %calculate total horizontal and vertical distance the shearing blocks will move
 dist_vert_end = perc_vert_end*(nb(1,2) - sb(1,2));
 dist_horz_off = perc_horz_off*(eb(1,1) - wb(1,1));
 
+%find groups of neighbors for each element and set the regrouping counter
+G = group(xi, yi, r, max_r, regroup_radii);
+regroup_count = 0;
+
 %Initialize time step and horizonatal block velocity. The horizontal block
 %velocity is set to .01 times the critical shear block velocity because,
 %even though the blocks will move horizontally first, the critical shear
 %block velocity is still a good reference point.
-t = 0.45*min(r)*sqrt((2*pi*rho)/(youngs_mod))
-vb = 0.01*ravg/t
+t = 0.5*min(r)*sqrt((2*pi*rho)/(youngs_mod))
 block_vert = 0;  %0 for blocks moving horizontally, 1 for vertically
 array_width = -1; %declaration
-
-%find groups of neighbors for each element and set the regrouping counter
-max_r = max(r);
-G = group(xi, yi, r, max_r, regroup_radii);
-regroup_count = 0;
 
 %Allocate variables for tracking contacts
 %number of possible unique contacts between elements
@@ -230,8 +230,9 @@ S_wb = zeros(N,1); %total shear overlap of west block contacts
 %tau_store = zeros(1e5, N);
 
 %Plotting the initialized array, storing handles for in-loop replotting
+figure(1); %default plotting destination
 [e_handles, l_handles] = plotElements(xi, yi, r, 'on', 'k-');
-blockHandles = plotBlocks(nb, eb, sb, wb, vb, block_vert);
+blockHandles = plotBlocks(nb, eb, sb, wb, slip_rate_hat, block_vert);
 title('Initial array', 'fontsize', 18, 'interpreter', 'latex');
 xlabel('x-dimension (m)', 'fontsize', 16, 'interpreter', 'latex');
 ylabel('y-dimension (m)', 'fontsize', 16, 'interpreter', 'latex');
@@ -280,7 +281,7 @@ clock1 = start_clock;
 while(dist_vert < dist_vert_end)
 
     %move blocks
-    d = t*vb;
+    d = t*slip_rate_hat;
     if(block_vert)
         nb(1,2) = nb(1,2) + d; %north block, left y coordinate
         nb(2,2) = nb(2,2) - d; %north block, right y coordinate
@@ -339,7 +340,7 @@ while(dist_vert < dist_vert_end)
             if(contact_flags(idx))
 
                 %NORMAL FORCE
-                fn = youngs_mod*U(k)*2*depth;
+                fn = youngs_mod*U(k)*depth_hat*R_0^2;
                 %alpha is the angle between element centers
                 alpha = abs(atan((yi(I(k)) - yi(j))/(xi(I(k)) - xi(j))));
                 %x component
@@ -394,7 +395,7 @@ while(dist_vert < dist_vert_end)
                         (y_int - yi(I(k)))^2);
 
                     %check that the friction shear limit isn't exceeded
-                    f_parallel = S_e(idx)*2*shear_mod*depth;
+                    f_parallel = S_e(idx)*shear_mod*depth_hat*R_0^2;
                     if(abs(f_parallel) > fn*static_friction)
                         f_parallel = f_parallel*kinetic_friction;
                         S_e(idx) = 0;
@@ -428,7 +429,7 @@ while(dist_vert < dist_vert_end)
             if(U > 0)
 
                 %NORMAL FORCE
-                fn = youngs_mod*U*2*depth;
+                fn = youngs_mod*U*depth_hat*R_0^2;
                 fx_sum = fx_sum + fn*sin(b_angle);
                 fy_sum = fy_sum - fn*cos(b_angle);
 
@@ -441,7 +442,7 @@ while(dist_vert < dist_vert_end)
         U = (xi(j) + r(j)) - eb(1,1);
         if(U > 0)
             %NORMAL FORCE
-            fn = youngs_mod*U*2*depth;
+            fn = youngs_mod*U*depth_hat*R_0^2;
             fx_sum = fx_sum - fn;
 
             %SHEAR FORCE
@@ -453,7 +454,7 @@ while(dist_vert < dist_vert_end)
             S_eb(j) = S_eb(j) - dtheta*(r(j) - U);
 
             %compute shear force and check friction limit
-            f_parallel = S_eb(j)*shear_mod*2*depth;
+            f_parallel = S_eb(j)*shear_mod*depth_hat*R_0^2;
             if(abs(f_parallel) > fn*static_friction)
               f_parallel = f_parallel*kinetic_friction;
               S_eb(j) = 0;
@@ -467,7 +468,7 @@ while(dist_vert < dist_vert_end)
             %NORMAL FORCE
             U = r(j) - cos(b_angle)*(yi(j) - sb(1,2) - b_slope*(xi(j) - sb(1,1)));
             if(U > 0)
-                fn = youngs_mod*U*2*depth;
+                fn = youngs_mod*U*depth_hat*R_0^2;
                 fx_sum = fx_sum - fn*sin(b_angle);
                 fy_sum = fy_sum + fn*cos(b_angle);
             end
@@ -479,7 +480,7 @@ while(dist_vert < dist_vert_end)
         U = wb(1,1) - (xi(j) - r(j));
         if(U > 0)
             %NORMAL FORCE
-            fn = youngs_mod*U*2*depth;
+            fn = youngs_mod*U*depth_hat*R_0^2;
             fx_sum = fx_sum + fn;
 
             %SHEAR FORCE
@@ -492,7 +493,7 @@ while(dist_vert < dist_vert_end)
             S_wb(j) = S_wb(j) - dtheta*(r(j) - U);
 
             %compute shear force and check friction limit
-            f_parallel = S_wb(j)*shear_mod*2*depth;
+            f_parallel = S_wb(j)*shear_mod*depth_hat*R_0^2;
             if(abs(f_parallel) > fn*static_friction)
               f_parallel = f_parallel*kinetic_friction;
               S_wb(j) = 0;
@@ -505,21 +506,21 @@ while(dist_vert < dist_vert_end)
         if(block_vert)
 
             %relative velocity
-            rel_vel = (yi(j) - yl(j))/t;
+            %rel_vel = slip_rate_hat - (yi(j) - yl(j))/t;
 
             %y-axis traction
-            coef = (pi*(r(j)^2)*viscosity)/z_trans;
-            fy = coef*rel_vel*(1 - 2*(xi(j) - wb(1,1))/array_width);
+            %coef = 
+            %fy = 
             %fy_sum = fy_sum + fy;
 
             %torque
-            coef = (pi*viscosity*r(j)^4)/(2*array_width*z_trans);
-            tau = coef*rel_vel;
-            %tau_sum = tau_sum + (pi*viscosity*rel_vel*r(j)^4)/(2*array_width);
+            %coef = 
+            %tau = 
+            %tau_sum = tau_sum + tau;
 
-            if(dist_vert > dist_vert_end*0.25)
-                temp = 0;
-            end
+            %if(dist_vert > dist_vert_end*0.25)
+            %    temp = 0;
+            %end
         end
 
         %store forces for varargout and post-trial inspection
@@ -537,7 +538,7 @@ while(dist_vert < dist_vert_end)
 
     end
 
-    %advance the positions of the elements
+    %advance the positions of the elements, swapping arrays
     xl = xi;
     xi = xf;
     yl = yi;
@@ -588,7 +589,7 @@ while(dist_vert < dist_vert_end)
         delete(blockHandles);
         [e_handles,l_handles] = lineElements(xi, yi, r, thetai,...
             'on', 'k', '-');
-        blockHandles = lineBlocks(nb, eb, sb, wb, vb, block_vert);
+        blockHandles = lineBlocks(nb, eb, sb, wb, slip_rate_hat, block_vert);
         drawnow;
     end
 end
@@ -598,7 +599,7 @@ delete(e_handles);
 delete(l_handles);
 delete(blockHandles);
 lineElements(xi, yi, r, thetai, 'on', 'k', '-');
-lineBlocks(nb, eb, sb, wb, vb, block_vert);
+lineBlocks(nb, eb, sb, wb, slip_rate_hat, block_vert);
 drawnow;
 
 %calculate average speed and print progress update
