@@ -34,6 +34,8 @@ maxReach = max(randBounds);%compared against distance to closest elements
         pause on;
         hold on;
         clf;
+        mov = repmat(struct('cdata',[],'colormap',[]), 1000, 1);
+        mov_count = 1;
     end
 %DEMO
 
@@ -54,6 +56,8 @@ r(1) = boundedRandom(randBounds);
 %DEMO
     if(demo~=0)
         lineElements(x(1),y(1),r(1),'off','k','-');
+        mov(mov_count) = getframe;
+        mov_count = mov_count + 1;
         pause(demo);
     end
 %DEMO
@@ -65,6 +69,8 @@ for i = 2:nrows
     %DEMO
         if(demo~=0)
             lineElements(x(i),y(i),r(i),'off','k','-');
+            mov(mov_count) = getframe;
+            mov_count = mov_count + 1;
             pause(demo);
         end
     %DEMO
@@ -89,6 +95,8 @@ while(y(i)>(y(i-1) - r(i-1)))
     %DEMO
         if(demo~=0)
             lineElements(x(i),y(i),r(i),'off','k','-');
+            mov(mov_count) = getframe;
+            mov_count = mov_count + 1;
             pause(demo);
         end
     %DEMO
@@ -100,6 +108,8 @@ x = x - x(i);
 %DEMO
     if(demo~=0)
         plotElements(x(1:i),y(1:i),r(1:i),'off','k-');
+        mov(mov_count) = getframe;
+        mov_count = mov_count + 1;
     end
 %DEMO
 
@@ -116,6 +126,8 @@ for i = i+1:i+ncols-1
     %DEMO
         if(demo~=0)
             lineElements(x(i),y(i),r(i),'off','k','-');
+            mov(mov_count) = getframe;
+            mov_count = mov_count + 1;
             pause(demo);
         end
     %DEMO
@@ -139,6 +151,8 @@ while((x(i) + r(i))<arraywidth)
     %DEMO
         if(demo~=0)
             lineElements(x(i),y(i),r(i),'off','k','-');
+            mov(mov_count) = getframe;
+            mov_count = mov_count + 1;
             pause(demo);
         end
     %DEMO
@@ -163,6 +177,8 @@ end
 %DEMO
     if(demo~=0)
         plotElements(x(1:i),y(1:i),r(1:i),'off','k-');
+        mov(mov_count) = getframe;
+        mov_count = mov_count + 1;
     end
 %DEMO
 
@@ -181,6 +197,8 @@ y(i) = y(1) + r(1) - r(i);
 %DEMO
     if(demo~=0)
         lineElements(x(i),y(i),r(i),'off','k','-');
+        mov(mov_count) = getframe;
+        mov_count = mov_count + 1;
         pause(demo);
     end
 %DEMO
@@ -204,6 +222,8 @@ while(isempty(I) && (D > (.1*mean(r))))
     %DEMO
         if(demo~=0)
             lineElements(x(i),y(i),r(i),'off','k','-');
+            mov(mov_count) = getframe;
+            mov_count = mov_count + 1;
             pause(demo);
         end
     %DEMO
@@ -228,6 +248,8 @@ corner3 = i;                        %version of Matlab.
 %DEMO
     if(demo~=0)
         plotElements(x(1:i),y(1:i),r(1:i),'off','k-');
+        mov(mov_count) = getframe;
+        mov_count = mov_count + 1;
     end
 %DEMO
 
@@ -242,6 +264,8 @@ while(~done)
     %DEMO
         if(demo~=0)
             lineElements(x(i),y(i),r(i),'off','k','-');
+            mov(mov_count) = getframe;
+            mov_count = mov_count + 1;
             pause(demo);
         end
     %DEMO
@@ -293,8 +317,12 @@ c1 = unique(temp);
     if(demo~=0)
         plotElements(x(1:i),y(1:i),r(1:i),'off','k-');
         highlightElements(x,y,r,c1,2);
+        mov(mov_count) = getframe;
+        mov_count = mov_count + 1;
         clf;
         lineElements(x(1:i),y(1:i),r(1:i),'off',[.75 .75 .75],'-');
+        mov(mov_count) = getframe;
+        mov_count = mov_count + 1;
         pause(demo);
     end
 %DEMO
@@ -333,6 +361,10 @@ for j = rcol
         count = count + 1;
     end
 end
+
+%shuffle c1 and c2
+c1 = c1(randperm(length(c1)));
+c2 = c2(randperm(length(c2)),:);
 
 %weights for averaging the positions of elements in c1
 c1w = zeros(9,2);
@@ -386,8 +418,8 @@ while(placed)
                         %successful placement
                         %DEMO
                             if(demo ~= 0)
-                                demoInteriorPlacement(xloc,yloc,x,y,r,i-1,...
-                                    c2(j,:),c2w(k,:),Iclose,demo);
+                                [mov, mov_count] = demoInteriorPlacement(xloc,yloc,x,y,r,i-1,...
+                                    c2(j,:),c2w(k,:),Iclose,demo,mov,mov_count);
                                 demo = 0.975*demo;
                             end
                         %DEMO
@@ -429,8 +461,8 @@ while(placed)
                             %successful placement
                             %DEMO
                                 if(demo ~= 0)
-                                    demoInteriorPlacement(xloc,yloc,x,y,r,...
-                                        i-1,c1(j),c1w(k,:),Iclose,demo);
+                                    [mov, mov_count] = demoInteriorPlacement(xloc,yloc,x,y,r,...
+                                        i-1,c1(j),c1w(k,:),Iclose,demo,mov,mov_count);
                                     demo = 0.975*demo;
                                 end
                             %DEMO
@@ -467,6 +499,9 @@ end
 %DEMO
     if(demo ~= 0)
         plotElements(x,y,r,'off','k-');
+        mov(mov_count) = getframe;
+        mov = mov(1:mov_count);
+        save('demo_movie', 'mov');
     end
 %DEMO
 

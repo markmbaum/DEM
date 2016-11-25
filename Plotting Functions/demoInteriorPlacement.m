@@ -1,4 +1,4 @@
-function demoInteriorPlacement(xloc,yloc,x,y,r,i,c,w,Iclose,demo)
+function [mov, mov_count] = demoInteriorPlacement(xloc,yloc,x,y,r,i,c,w,Iclose,demo,mov,mov_count)
 %demoInteriorPlacement draws lines to the anchor elements used to generate
 %a new interior element.
 %   [h] = demoInteriorPlacement(xloc,yloc,x,y,r,i,c,w,Iclose,demo)
@@ -33,11 +33,15 @@ if(~isempty(Iclose))
 end
 
 pause(demo);
+mov(mov_count) = getframe;
+mov_count = mov_count + 1;
 
 %draw element
 h{end} = lineElements(x(i+1),y(i+1),r(i+1),'off','k','-');
 
 pause(demo);
+mov(mov_count) = getframe;
+mov_count = mov_count + 1;
 
 %delete the graphics
 if(~isempty(Iclose))
