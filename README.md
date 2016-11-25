@@ -1,4 +1,4 @@
-This repository contains the MATLAB code for an undergraduate [thesis project](https://www.overleaf.com/read/kzsvpynnmtgx) examining the deformation of tectonic scale shear zones. The code is a numerical model that assembles arrays of elastic cylinders and subjects them to simple shear, as shown below.
+This repository contains the MATLAB code for an undergraduate [thesis project](https://www.overleaf.com/read/kzsvpynnmtgx) examining the deformation of tectonic scale shear zones. The code is a numerical model that assembles arrays of elastic cylinders and subjects them to simple shear, as shown below (the fig may take a moment to load).
 
 ![Movie_friction_1_ncols_16_sh1](Other Things/Movie_friction_1_ncols_16_sh1.gif)
 
