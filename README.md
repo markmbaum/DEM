@@ -10,4 +10,4 @@ The first sub-project is an algorithm for assembling rectangularly confined coll
 
 ![demo-gif](Other Things/demo-gif.gif)
 
-The second sub-project is set of polynomials for mapping collections of indices, from an ordered list or array, onto single indices for efficient storage of data relating those collections. A quick write-up and more extensive explanation of this concept can be found here: [https://www.overleaf.com/read/dpknzcyjxxtt](https://www.overleaf.com/read/dpknzcyjxxtt) (wait and refresh the page if the document doesn't render immediately).
+The second sub-project is set of polynomials for mapping collections of indices, from an ordered list or array, onto single indices for efficient storage of data relating those collections. A quick write-up and more extensive explanation of this concept can be found here: [https://www.overleaf.com/read/dpknzcyjxxtt](https://www.overleaf.com/read/dpknzcyjxxtt).
