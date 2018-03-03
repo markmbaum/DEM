@@ -14,11 +14,11 @@ function [idx] = map3(i,j,k)
 
 %optimal (I think) sorting of the three inputs, descending order
 if(i > j) %i and j in right order
-    if(j > k) %j and k in tight order
+    if(j > k) %j and k in right order
         a = i; b = j; c = k;
     else %j and k in wrong order
         if(k > i) %k goes first
-            a = k; b = i; b = j;
+            a = k; b = i; c = j;
         else %k goes second
             a = i; b = k; c = j;
         end
